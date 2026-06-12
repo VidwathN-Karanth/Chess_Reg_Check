@@ -27,6 +27,8 @@ ChessCheck was built to solve exactly this. Instead of spending hours on manual 
 
 ---
 
+<img width="2879" height="1705" alt="image" src="https://github.com/user-attachments/assets/06c2251b-70d8-4662-b917-c63c4f0f7b04" />
+
 ## 💻 Features
 
 - **KSCA Tab** — Verify players on the Karnataka State Chess Association portal
@@ -59,6 +61,9 @@ ChessCheck was built to solve exactly this. Instead of spending hours on manual 
 - **Player not found** — Double-check the ID and ensure the player is registered on that portal
 
 ---
+
+
+
 
 ## 🏛️ Portals Used
 
