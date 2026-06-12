@@ -1,6 +1,6 @@
-# Chess Registration Verifier
+# ChessCheck
 
-Chess Registration Verifier is a professional, standalone Windows desktop application designed to quickly verify chess players' membership status on the **Karnataka State Chess Association (KSCA)** and the **All India Chess Federation (AICF)** portals.
+ChessCheck is a professional, standalone Windows desktop application designed to quickly verify chess players' membership status on the **Karnataka State Chess Association (KSCA)** and the **All India Chess Federation (AICF)** portals.
 
 This application is packaged as a single executable containing all dependencies—including its own secure Chromium web browser engine—so you can run it instantly on any Windows machine without installing Python or setting up drivers.
 
@@ -8,8 +8,8 @@ This application is packaged as a single executable containing all dependencies�
 
 ## 🚀 How to Run the Application (Executable)
 
-1. **Extract/Move the Folder**: Keep this `README.md` file and `ChessVerifier.exe` in the same directory.
-2. **Double-click `ChessVerifier.exe`**: 
+1. **Extract/Move the Folder**: Keep this `README.md` file and `ChessCheck.exe` in the same directory.
+2. **Double-click `ChessCheck.exe`**: 
    - When run, the application will boot directly into the GUI dashboard.
    - *Note: On the very first launch, Windows SmartScreen or your antivirus might show a warning because the executable is compiled from source and unsigned. Simply click "More Info" and select "Run Anyway."*
 

@@ -10,7 +10,6 @@ env/
 # Build and distribution
 build/
 dist/
-*.spec
 *.exe
 
 # Playwright

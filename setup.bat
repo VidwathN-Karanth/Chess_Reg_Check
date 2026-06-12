@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ==========================================
-echo  Chess Registration Verifier Setup
+echo  ChessCheck Setup
 echo ==========================================
 
 :: Check if Python 3.13 is available via py launcher

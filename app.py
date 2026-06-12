@@ -21,7 +21,7 @@ from playwright_stealth import Stealth
 # ==========================================
 #  Logging Configuration
 # ==========================================
-logger = logging.getLogger("ChessVerifier")
+logger = logging.getLogger("ChessCheck")
 logger.setLevel(logging.INFO)
 
 # ==========================================
@@ -357,10 +357,10 @@ class ScrapingWorker(threading.Thread):
 #  Tkinter Application GUI
 # ==========================================
 
-class ChessVerifierApp:
+class ChessCheckApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chess Registration Verifier")
+        self.root.title("ChessCheck")
         self.root.geometry("1000x650")
         self.root.minsize(900, 550)
         self.root.configure(bg=BG_DARK)
@@ -431,7 +431,7 @@ class ChessVerifierApp:
         header_frame = ttk.Frame(self.root, padding=(20, 15, 20, 10))
         header_frame.pack(fill="x")
         
-        title_lbl = ttk.Label(header_frame, text="Chess Registration Verifier", style="Header.TLabel")
+        title_lbl = ttk.Label(header_frame, text="ChessCheck", style="Header.TLabel")
         title_lbl.pack(anchor="w")
         
         subtitle_lbl = ttk.Label(header_frame, text="Verify active memberships on Karnataka State Chess Association (KSCA) and All India Chess Federation (AICF)", style="Sub.TLabel")
@@ -905,5 +905,5 @@ class ChessVerifierApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ChessVerifierApp(root)
+    app = ChessCheckApp(root)
     root.mainloop()
