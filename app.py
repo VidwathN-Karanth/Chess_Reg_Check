@@ -438,6 +438,22 @@ class ChessCheckApp:
         subtitle_lbl = ttk.Label(header_frame, text="Verify active memberships on Karnataka State Chess Association (KSCA) and All India Chess Federation (AICF)", style="Sub.TLabel")
         subtitle_lbl.pack(anchor="w")
         
+        # Bottom Footer
+        footer_frame = ttk.Frame(self.root, padding=(10, 0, 20, 5))
+        footer_frame.pack(fill="x", side="bottom")
+        developer_lbl = ttk.Label(footer_frame, text="Developed by Vidwath N Karanth", style="Footer.TLabel")
+        developer_lbl.pack(side="right")
+        
+        # Bottom Console Log Area
+        console_frame = ttk.Frame(self.root, padding=(10, 5, 10, 10))
+        console_frame.pack(fill="x", side="bottom")
+        
+        console_lbl = ttk.Label(console_frame, text="SYSTEM LOGGER CONSOLE", style="Console.TLabel")
+        console_lbl.pack(anchor="w", padx=10)
+        
+        self.log_text = tk.Text(console_frame, height=5, bg=CONSOLE_BG, fg=FG_LIGHT, insertbackground=FG_LIGHT, font=("Consolas", 9), relief="solid", borderwidth=1, highlightthickness=0, state="disabled", padx=8, pady=8)
+        self.log_text.pack(fill="x", padx=10, pady=5)
+
         # Tabs Notebook
         self.notebook = ttk.Notebook(self.root, padding=10)
         self.notebook.pack(fill="both", expand=True)
@@ -452,22 +468,6 @@ class ChessCheckApp:
         # Build contents inside both tabs
         self.build_tab_content(self.ksca_frame, "ksca")
         self.build_tab_content(self.aicf_frame, "aicf")
-        
-        # Bottom Console Log Area
-        console_frame = ttk.Frame(self.root, padding=(10, 5, 10, 10))
-        console_frame.pack(fill="x")
-        
-        console_lbl = ttk.Label(console_frame, text="SYSTEM LOGGER CONSOLE", style="Console.TLabel")
-        console_lbl.pack(anchor="w", padx=10)
-        
-        self.log_text = tk.Text(console_frame, height=5, bg=CONSOLE_BG, fg=FG_LIGHT, insertbackground=FG_LIGHT, font=("Consolas", 9), relief="solid", borderwidth=1, highlightthickness=0, state="disabled", padx=8, pady=8)
-        self.log_text.pack(fill="x", padx=10, pady=5)
-        
-        # Bottom Footer
-        footer_frame = ttk.Frame(self.root, padding=(10, 0, 20, 5))
-        footer_frame.pack(fill="x")
-        developer_lbl = ttk.Label(footer_frame, text="Developed by Vidwath N Karanth", style="Footer.TLabel")
-        developer_lbl.pack(side="right")
 
     def build_tab_content(self, parent, site_type):
         """Constructs a standardized side-by-side dashboard structure inside a tab."""
