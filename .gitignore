@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Build and distribution
+build/
+dist/
+*.spec
+*.exe
+
+# Playwright
+ms-playwright/
+
+# Local/system files
+.DS_Store
+Thumbs.db
