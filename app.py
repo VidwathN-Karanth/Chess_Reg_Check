@@ -397,6 +397,7 @@ class ChessCheckApp:
         self.style.configure("Sub.TLabel", background=BG_DARK, foreground=FG_MUTED, font=("Segoe UI", 9, "italic"))
         self.style.configure("Card.TLabel", background=BG_CARD, foreground=FG_LIGHT, font=("Segoe UI", 10, "bold"))
         self.style.configure("Console.TLabel", background=BG_DARK, foreground=ACCENT, font=("Segoe UI", 9, "bold"))
+        self.style.configure("Footer.TLabel", background=BG_DARK, foreground=FG_MUTED, font=("Segoe UI", 8, "italic"))
         
         # Buttons
         self.style.configure("Accent.TButton", background=ACCENT, foreground="#ffffff", font=("Segoe UI", 10, "bold"), borderwidth=0, focuscolor=ACCENT)
@@ -461,6 +462,12 @@ class ChessCheckApp:
         
         self.log_text = tk.Text(console_frame, height=5, bg=CONSOLE_BG, fg=FG_LIGHT, insertbackground=FG_LIGHT, font=("Consolas", 9), relief="solid", borderwidth=1, highlightthickness=0, state="disabled", padx=8, pady=8)
         self.log_text.pack(fill="x", padx=10, pady=5)
+        
+        # Bottom Footer
+        footer_frame = ttk.Frame(self.root, padding=(10, 0, 20, 5))
+        footer_frame.pack(fill="x")
+        developer_lbl = ttk.Label(footer_frame, text="Developed by Vidwath N Karanth", style="Footer.TLabel")
+        developer_lbl.pack(side="right")
 
     def build_tab_content(self, parent, site_type):
         """Constructs a standardized side-by-side dashboard structure inside a tab."""
