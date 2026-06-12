@@ -8,6 +8,14 @@ ChessCheck is a standalone Windows desktop application to verify chess players' 
 
 ---
 
+## 🧩 The Problem
+
+Organizing a chess tournament in Karnataka involves verifying every participant's membership with both the Karnataka State Chess Association (KSCA) and the All India Chess Federation (AICF). Traditionally, organizers have to open each website manually, type in every player's ID one by one, wait for the page to load, read the result, and note it down — repeating this for every single participant. For a tournament with 50, 100, or even 200 players, this process can take hours, is highly prone to human error, and often causes delays in registration and pairing. There is no official tool provided by KSCA or AICF to do this in bulk.
+
+ChessCheck was built to solve exactly this. Instead of spending hours on manual lookups, an organizer can paste all player IDs at once, click a single button, and get a complete verified list with names and active/inactive status within minutes — ready to export and use.
+
+---
+
 ## ⬇️ Download & Run
 
 1. Go to the **Releases** section on the right side of this page
