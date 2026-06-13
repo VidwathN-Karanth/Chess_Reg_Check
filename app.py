@@ -5,6 +5,14 @@ import sys
 if getattr(sys, 'frozen', False):
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(sys._MEIPASS, "ms-playwright")
 
+# Try to make the application high-DPI aware on Windows
+if sys.platform == "win32":
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+
 import asyncio
 import csv
 import logging
@@ -39,6 +47,28 @@ BG_TEXT = "#ffffff"       # Background for text boxes
 CONSOLE_BG = "#f8f9fa"    # Background for logs
 
 # ==========================================
+#  Helpers
+# ==========================================
+
+def normalize_id(id_str):
+    """Removes all non-alphanumeric characters and converts to lowercase."""
+    return "".join(c for c in id_str if c.isalnum()).lower()
+
+def match_ids(query_id, cell_id):
+    """Robustly compares two IDs for equality or numeric prefix matching."""
+    q_norm = normalize_id(query_id)
+    c_norm = normalize_id(cell_id)
+    if not q_norm or not c_norm:
+        return False
+    if q_norm == c_norm:
+        return True
+    # If query is purely numeric (e.g. 32194), it should match cell_id prefix (e.g. 32194ksca2026)
+    if q_norm.isdigit() and c_norm.startswith(q_norm):
+        return True
+    return False
+
+
+# ==========================================
 #  Scraping Routines
 # ==========================================
 
@@ -61,10 +91,11 @@ async def scrape_ksca(ids, result_queue, stop_event):
             
             result_queue.put(('log', "Navigating to KSCA Player Search portal..."))
             result_queue.put(('progress_step', 30, "Navigating to KSCA player directory..."))
-            await page.goto("https://karnatakachess.com/player-search/", wait_until="domcontentloaded")
+            await page.goto("https://karnatakachess.com/player-search/", wait_until="domcontentloaded", timeout=60000)
             
             # Wait for the bulk textarea to load (there's only one textarea on the page)
             await page.wait_for_selector("textarea", timeout=15000)
+            
             result_queue.put(('log', "Page loaded. Pasting IDs into Bulk search..."))
             result_queue.put(('progress_step', 50, "Pasting player IDs into Bulk search..."))
             
@@ -104,11 +135,45 @@ async def scrape_ksca(ids, result_queue, stop_event):
                     await page.keyboard.press("Enter")
             
             result_queue.put(('start', len(clean_ids)))
-            result_queue.put(('log', "Bulk query submitted. Waiting for table updates..."))
-            result_queue.put(('progress_step', 70, "Submitting query and waiting for table updates..."))
+            result_queue.put(('log', "Bulk query submitted. Waiting for search results..."))
+            result_queue.put(('progress_step', 70, "Submitting query and waiting for search results..."))
             
-            # Wait a short moment for table update (usually quick)
-            await asyncio.sleep(3.0)
+            # Wait dynamically for the table to update (up to 20 seconds)
+            clean_ids_norm = [normalize_id(pid) for pid in clean_ids if pid.strip()]
+            updated = False
+            for i in range(200):
+                await asyncio.sleep(0.1)
+                try:
+                    current_row = page.locator("table tbody tr").first
+                    if await current_row.is_visible():
+                        row_text = await current_row.inner_text()
+                        row_clean = row_text.lower()
+                        
+                        # Check empty state
+                        if "no data" in row_clean or "no match" in row_clean or "no record" in row_clean:
+                            updated = True
+                            break
+                            
+                        # Check if first row is one of our query IDs
+                        first_cell = current_row.locator("td").first
+                        if await first_cell.is_visible():
+                            cell_text = await first_cell.inner_text()
+                            cell_norm = normalize_id(cell_text)
+                            
+                            matched = False
+                            for q_norm in clean_ids_norm:
+                                if cell_norm == q_norm or (q_norm.isdigit() and cell_norm.startswith(q_norm)):
+                                    matched = True
+                                    break
+                                    
+                            if matched:
+                                updated = True
+                                break
+                except Exception:
+                    pass
+            
+            if not updated:
+                result_queue.put(('log', "Warning: table update detection timed out, proceeding..."))
             
             # Read all matches page-by-page
             results_map = {}
@@ -133,6 +198,7 @@ async def scrape_ksca(ids, result_queue, stop_event):
                     if len(cells) >= 6:
                         cell_id = (await cells[0].inner_text()).strip()
                         name = (await cells[1].inner_text()).strip()
+                        district = (await cells[2].inner_text()).strip() or "N/A"
                         status = (await cells[5].inner_text()).strip()
                         
                         if "inactive" in status.lower() or "in-active" in status.lower():
@@ -142,19 +208,10 @@ async def scrape_ksca(ids, result_queue, stop_event):
                         else:
                             status_str = status
                         
-                        # Extract the numeric prefix of the KSCA ID (e.g., '38135' from '38135KSCA2027')
-                        import re
-                        parts = re.split(r'ksca', cell_id, flags=re.IGNORECASE)
-                        num_part = parts[0].strip() if parts else ""
-                        
                         # Match with query IDs (exact or exact numeric match)
                         for pid in clean_ids:
-                            pid_clean = pid.strip().lower()
-                            cell_clean = cell_id.strip().lower()
-                            num_clean = num_part.lower()
-                            
-                            if pid_clean == cell_clean or (num_clean and pid_clean == num_clean):
-                                results_map[pid] = (name, status_str)
+                            if match_ids(pid, cell_id):
+                                results_map[pid] = (name, district, status_str)
                 
                 # Check for "Next page" button
                 next_btn = await page.query_selector("button.v-pagination__next, button[aria-label*='Next'], button[aria-label*='next']")
@@ -164,9 +221,31 @@ async def scrape_ksca(ids, result_queue, stop_event):
                     if is_disabled is not None or "disabled" in class_attr:
                         break
                     else:
+                        # Get first row ID before clicking next to avoid skipping page updates
+                        first_row_id_before = ""
+                        if len(rows) > 0:
+                            cells = await rows[0].query_selector_all("td")
+                            if len(cells) > 0:
+                                first_row_id_before = (await cells[0].inner_text()).strip()
+                            
                         page_num += 1
                         await next_btn.click()
-                        await asyncio.sleep(1.5) # Wait for page turn
+                        
+                        # Wait for the first row ID to change (up to 5 seconds)
+                        changed = False
+                        for _ in range(50):
+                            await asyncio.sleep(0.1)
+                            first_row_now = await page.query_selector("table tbody tr")
+                            if first_row_now:
+                                cells_now = await first_row_now.query_selector_all("td")
+                                if len(cells_now) > 0:
+                                    first_row_id_now = (await cells_now[0].inner_text()).strip()
+                                    if first_row_id_now and first_row_id_before and first_row_id_now != first_row_id_before:
+                                        changed = True
+                                        break
+                                        
+                        if not changed:
+                            result_queue.put(('log', f"Warning: pagination transition to page {page_num} timed out, proceeding anyway..."))
                 else:
                     break
             
@@ -176,11 +255,11 @@ async def scrape_ksca(ids, result_queue, stop_event):
             result_queue.put(('progress_step', 100, "Compiling and presenting results..."))
             for idx, pid in enumerate(clean_ids):
                 if pid in results_map:
-                    name, status = results_map[pid]
-                    result_queue.put(('result', 'ksca', pid, name, status))
-                    result_queue.put(('log', f"ID {pid} Found: {name} ({status})"))
+                    name, district, status = results_map[pid]
+                    result_queue.put(('result', 'ksca', pid, name, district, status))
+                    result_queue.put(('log', f"ID {pid} Found: {name} | {district} ({status})"))
                 else:
-                    result_queue.put(('result', 'ksca', pid, "N/A", "Not Found"))
+                    result_queue.put(('result', 'ksca', pid, "N/A", "N/A", "Not Found"))
                     result_queue.put(('log', f"ID {pid}: Not Found"))
                     
             await browser.close()
@@ -210,7 +289,7 @@ async def scrape_aicf(ids, result_queue, stop_event):
             
             result_queue.put(('log', "Navigating to AICF Players portal..."))
             result_queue.put(('progress_step', 10, "Navigating to AICF Players portal..."))
-            await page.goto("https://prs.aicf.in/players", wait_until="domcontentloaded")
+            await page.goto("https://prs.aicf.in/players", wait_until="domcontentloaded", timeout=60000)
             
             input_selector = "input.ant-input"
             await page.wait_for_selector(input_selector, timeout=15000)
@@ -274,7 +353,7 @@ async def scrape_aicf(ids, result_queue, stop_event):
                     if empty_el and await empty_el.is_visible():
                         empty_text = (await empty_el.inner_text()).strip()
                         if "No Data" in empty_text:
-                            result_queue.put(('result', 'aicf', player_id, "N/A", "Not Found"))
+                            result_queue.put(('result', 'aicf', player_id, "N/A", "N/A", "N/A", "Not Found"))
                             result_queue.put(('log', f"ID {player_id}: Not Found"))
                             continue
                     
@@ -288,6 +367,8 @@ async def scrape_aicf(ids, result_queue, stop_event):
                             first_name = (await cells[1].inner_text()).strip()
                             last_name = (await cells[2].inner_text()).strip()
                             full_name = f"{first_name} {last_name}".strip()
+                            district = (await cells[3].inner_text()).strip() or "N/A"
+                            state = (await cells[4].inner_text()).strip() or "N/A"
                             status = (await cells[6].inner_text()).strip()
                             
                             # Format status
@@ -298,23 +379,23 @@ async def scrape_aicf(ids, result_queue, stop_event):
                             else:
                                 status_str = status
                                 
-                            if player_id.strip().lower() == cell_id.strip().lower():
-                                result_queue.put(('result', 'aicf', player_id, full_name, status_str))
-                                result_queue.put(('log', f"ID {player_id} Found: {full_name} ({status_str})"))
+                            if match_ids(player_id, cell_id):
+                                result_queue.put(('result', 'aicf', player_id, full_name, state, district, status_str))
+                                result_queue.put(('log', f"ID {player_id} Found: {full_name} | {state} | {district} ({status_str})"))
                                 found = True
                                 break
                     
                     if not found:
-                        result_queue.put(('result', 'aicf', player_id, "N/A", "Not Found"))
+                        result_queue.put(('result', 'aicf', player_id, "N/A", "N/A", "N/A", "Not Found"))
                         result_queue.put(('log', f"ID {player_id}: Not Found in search results"))
                 
                 except Exception as e:
                     logger.error(f"Error scraping AICF ID {player_id}: {str(e)}")
-                    result_queue.put(('result', 'aicf', player_id, "Error (Timeout)", "Error"))
+                    result_queue.put(('result', 'aicf', player_id, "Error (Timeout)", "N/A", "N/A", "Error"))
                     result_queue.put(('log', f"ID {player_id}: Scraping error occurred"))
                 
-                # Polite short delay
-                await asyncio.sleep(random.uniform(0.5, 1.0))
+                # Wait 3.0 seconds to avoid overloading the server
+                await asyncio.sleep(3.0)
                 
             await browser.close()
             result_queue.put(('done', None))
@@ -360,7 +441,7 @@ class ScrapingWorker(threading.Thread):
 class ChessCheckApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("ChessCheck")
+        self.root.title("ChessCheck v1.2 (Dynamic Pagination)")
         self.root.geometry("1000x650")
         self.root.minsize(900, 550)
         self.root.configure(bg=BG_DARK)
@@ -417,7 +498,13 @@ class ChessCheckApp:
                        foreground=[("selected", ACCENT)])
 
         # Treeview (Table)
-        self.style.configure("Treeview", background=BG_CARD, fieldbackground=BG_CARD, foreground=FG_LIGHT, font=("Segoe UI", 10), rowheight=28, borderwidth=1, bordercolor=BORDER_COLOR)
+        # Calculate dynamic row height based on font metrics to support DPI scaling properly
+        from tkinter.font import Font
+        tree_font = Font(font=("Segoe UI", 10))
+        font_height = tree_font.metrics("linespace")
+        row_height = font_height + 10  # generous padding for a clean aesthetic
+        
+        self.style.configure("Treeview", background=BG_CARD, fieldbackground=BG_CARD, foreground=FG_LIGHT, font=("Segoe UI", 10), rowheight=row_height, borderwidth=1, bordercolor=BORDER_COLOR)
         self.style.configure("Treeview.Heading", background=BG_DARK, foreground=FG_LIGHT, font=("Segoe UI", 10, "bold"), borderwidth=1, bordercolor=BORDER_COLOR)
         self.style.map("Treeview", 
                        background=[("selected", ACCENT)], 
@@ -484,26 +571,9 @@ class ChessCheckApp:
         input_lbl = ttk.Label(left_panel, text="Enter Player IDs (one per line):", style="Card.TLabel")
         input_lbl.pack(anchor="w", pady=(0, 5))
         
-        # Scrollable Text box for player IDs
-        text_container = ttk.Frame(left_panel)
-        text_container.pack(fill="both", expand=True, pady=5)
-        
-        text_box = tk.Text(text_container, bg=BG_TEXT, fg=FG_LIGHT, insertbackground=FG_LIGHT, font=("Consolas", 10), relief="solid", borderwidth=1, highlightthickness=0, padx=8, pady=8)
-        text_box.pack(side="left", fill="both", expand=True)
-        
-        scrollbar = ttk.Scrollbar(text_container, orient="vertical", command=text_box.yview)
-        scrollbar.pack(side="right", fill="y")
-        text_box.configure(yscrollcommand=scrollbar.set)
-        
-        # Keep references to input boxes
-        if site_type == 'ksca':
-            self.ksca_input = text_box
-        else:
-            self.aicf_input = text_box
-            
-        # Button controls layout
+        # Button controls layout (pack at the bottom first so it remains visible)
         btn_frame = ttk.Frame(left_panel, style="Card.TFrame")
-        btn_frame.pack(fill="x", pady=(10, 0))
+        btn_frame.pack(side="bottom", fill="x", pady=(10, 0))
         
         verify_btn = ttk.Button(
             btn_frame, 
@@ -540,6 +610,23 @@ class ChessCheckApp:
             self.aicf_cancel_btn = cancel_btn
             self.aicf_clear_btn = clear_btn
 
+        # Scrollable Text box for player IDs (pack to fill remaining space)
+        text_container = ttk.Frame(left_panel)
+        text_container.pack(fill="both", expand=True, pady=5)
+        
+        text_box = tk.Text(text_container, bg=BG_TEXT, fg=FG_LIGHT, insertbackground=FG_LIGHT, font=("Consolas", 10), relief="solid", borderwidth=1, highlightthickness=0, padx=8, pady=8)
+        text_box.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(text_container, orient="vertical", command=text_box.yview)
+        scrollbar.pack(side="right", fill="y")
+        text_box.configure(yscrollcommand=scrollbar.set)
+        
+        # Keep references to input boxes
+        if site_type == 'ksca':
+            self.ksca_input = text_box
+        else:
+            self.aicf_input = text_box
+
         # ----------------------------------------------------
         # Right Panel (Results Table)
         # ----------------------------------------------------
@@ -575,17 +662,36 @@ class ChessCheckApp:
         table_container = ttk.Frame(right_panel, style="Card.TFrame")
         table_container.grid(row=1, column=0, sticky="nsew")
         
-        columns = ("id", "name", "status")
-        tree = ttk.Treeview(table_container, columns=columns, show="headings", selectmode="browse")
-        tree.pack(side="left", fill="both", expand=True)
-        
-        tree.heading("id", text="Player ID")
-        tree.heading("name", text="Full Name")
-        tree.heading("status", text="Membership Status")
-        
-        tree.column("id", width=120, anchor="center")
-        tree.column("name", width=250, anchor="w")
-        tree.column("status", width=150, anchor="center")
+        if site_type == 'ksca':
+            columns = ("id", "name", "district", "status")
+            tree = ttk.Treeview(table_container, columns=columns, show="headings", selectmode="browse")
+            tree.pack(side="left", fill="both", expand=True)
+            
+            tree.heading("id", text="Player ID")
+            tree.heading("name", text="Full Name")
+            tree.heading("district", text="District")
+            tree.heading("status", text="Membership Status")
+            
+            tree.column("id", width=120, anchor="center")
+            tree.column("name", width=250, anchor="w")
+            tree.column("district", width=150, anchor="center")
+            tree.column("status", width=150, anchor="center")
+        else:
+            columns = ("id", "name", "state", "district", "status")
+            tree = ttk.Treeview(table_container, columns=columns, show="headings", selectmode="browse")
+            tree.pack(side="left", fill="both", expand=True)
+            
+            tree.heading("id", text="Player ID")
+            tree.heading("name", text="Full Name")
+            tree.heading("state", text="State")
+            tree.heading("district", text="District")
+            tree.heading("status", text="Membership Status")
+            
+            tree.column("id", width=120, anchor="center")
+            tree.column("name", width=220, anchor="w")
+            tree.column("state", width=130, anchor="center")
+            tree.column("district", width=130, anchor="center")
+            tree.column("status", width=150, anchor="center")
         
         # Custom scrollbar for table
         table_scroll = ttk.Scrollbar(table_container, orient="vertical", command=tree.yview)
@@ -749,7 +855,10 @@ class ChessCheckApp:
         try:
             with open(filepath, mode="w", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(["Chess Player ID", "Scraped Full Name", "Verification Status"])
+                if site_type == 'ksca':
+                    writer.writerow(["Chess Player ID", "Scraped Full Name", "District", "Verification Status"])
+                else:
+                    writer.writerow(["Chess Player ID", "Scraped Full Name", "State", "District", "Verification Status"])
                 for row_id in children:
                     writer.writerow(tree.item(row_id)["values"])
                     
@@ -796,12 +905,16 @@ class ChessCheckApp:
                     
                 elif msg_type == 'result':
                     # Scraper returned single result row
-                    _, site, player_id, name, status = msg
+                    site = msg[1]
                     tree = self.ksca_tree if site == 'ksca' else self.aicf_tree
-                    # Insert row and apply text status tag
-                    tree.insert("", "end", values=(player_id, name, status), tags=(status,))
                     
-                    if site == 'aicf':
+                    if site == 'ksca':
+                        _, _, player_id, name, district, status = msg
+                        tree.insert("", "end", values=(player_id, name, district, status), tags=(status,))
+                    else:
+                        _, _, player_id, name, state, district, status = msg
+                        tree.insert("", "end", values=(player_id, name, state, district, status), tags=(status,))
+                        
                         self.completed_ids += 1
                         self.current_pct = 15 + (self.completed_ids / self.total_ids) * 85
                         prog_bar = self.aicf_progress_bar
