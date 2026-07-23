@@ -310,7 +310,7 @@ def fetch_aicf_player_sync(player_id, max_retries=5, timeout=15):
         raise last_err
     return {"status": "ok", "data": []}
 
-async def scrape_aicf(ids, result_queue, stop_event, sleep_delay=3.0):
+async def scrape_aicf(ids, result_queue, stop_event, sleep_delay=0.0):
     """
     Queries AICF backend players API directly with fast polling.
     URL: https://admin.aicf.in/api/players
